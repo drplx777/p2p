@@ -4,6 +4,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -24,20 +26,34 @@ type Config struct {
 	ChunkSizeBytes  int
 	HeartbeatPeriod time.Duration
 	DownloadTimeout time.Duration
+
+	DatabaseURL    string
+	SessionTTL     time.Duration
 }
 
 func Load() Config {
+	_ = godotenv.Load(".env", "../.env", "../../.env")
+
 	dataDir := getEnv("DATA_DIR", "data")
+	port := getEnv("PORT", "8080")
+	peerID := getEnv("PEER_ID", "")
+	if peerID == "" {
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "peer"
+		}
+		peerID = hostname + "-" + port
+	}
 	return Config{
 		AppMode: getEnv("APP_MODE", "peer"),
-		Port:    getEnv("PORT", "8080"),
+		Port:    port,
 
 		TrackerToken:       getEnv("TRACKER_TOKEN", "change-me-token"),
 		TrackerURL:         getEnv("TRACKER_URL", "http://localhost:7000"),
 		TrackerCleanupTTL:  getDurationEnv("TRACKER_CLEANUP_TTL", 90*time.Second),
 		TrackerCleanupTick: getDurationEnv("TRACKER_CLEANUP_TICK", 30*time.Second),
 
-		PeerID:          getEnv("PEER_ID", "peer-dev"),
+		PeerID:          peerID,
 		PublicBaseURL:   getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
 		DataDir:         dataDir,
 		MetaDir:         getEnv("META_DIR", dataDir+"/meta"),
@@ -46,6 +62,8 @@ func Load() Config {
 		ChunkSizeBytes:  getIntEnv("CHUNK_SIZE_BYTES", 524288),
 		HeartbeatPeriod: getDurationEnv("HEARTBEAT_PERIOD", 20*time.Second),
 		DownloadTimeout: getDurationEnv("DOWNLOAD_TIMEOUT", 10*time.Second),
+		DatabaseURL:     getEnv("DATABASE_URL", "postgres://p2p_user:p2p_password@localhost:5432/p2p_auth?sslmode=disable"),
+		SessionTTL:      getDurationEnv("SESSION_TTL", 168*time.Hour),
 	}
 }
 
