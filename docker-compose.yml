@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: p2p-tracker
+    env_file:
+      - .env
+    environment:
+      APP_MODE: tracker
+      PORT: ${TRACKER_PORT}
+    ports:
+      - "${TRACKER_PORT}:${TRACKER_PORT}"
+    restart: unless-stopped
+
+  peer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: p2p-peer
+    depends_on:
+      - tracker
+    env_file:
+      - .env
+    environment:
+      APP_MODE: peer
+      PORT: ${PEER_PORT}
+      TRACKER_URL: http://tracker:${TRACKER_PORT}
+      PUBLIC_BASE_URL: http://peer:${PEER_PORT}
+    ports:
+      - "${PEER_PORT}:${PEER_PORT}"
+    volumes:
+      - peer_data:/app/data
+    restart: unless-stopped
+
+  peer2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: p2p-peer-2
+    depends_on:
+      - tracker
+    env_file:
+      - .env
+    environment:
+      APP_MODE: peer
+      PORT: ${PEER2_PORT}
+      PEER_ID: ${PEER2_ID}
+      TRACKER_URL: http://tracker:${TRACKER_PORT}
+      PUBLIC_BASE_URL: http://peer2:${PEER2_PORT}
+    ports:
+      - "${PEER2_PORT}:${PEER2_PORT}"
+    volumes:
+      - peer2_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  peer_data:
+  peer2_data:

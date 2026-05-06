@@ -1,0 +1,27 @@
+# binaries
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# go
+*.test
+*.out
+coverage.*
+
+# ide and os
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# runtime data
+data/
+*.log
+
+# env and secrets
+.env
+.env.example
