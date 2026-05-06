@@ -27,6 +27,11 @@ services:
       PORT: ${PEER_PORT}
       TRACKER_URL: http://tracker:${TRACKER_PORT}
       PUBLIC_BASE_URL: http://peer:${PEER_PORT}
+      DATA_DIR: /app/data
+      META_DIR: /app/data/meta
+      CHUNKS_DIR: /app/data/chunks
+      DOWNLOADS_DIR: /app/data/downloads
+    user: "0:0"
     ports:
       - "${PEER_PORT}:${PEER_PORT}"
     volumes:
@@ -48,6 +53,11 @@ services:
       PEER_ID: ${PEER2_ID}
       TRACKER_URL: http://tracker:${TRACKER_PORT}
       PUBLIC_BASE_URL: http://peer2:${PEER2_PORT}
+      DATA_DIR: /app/data
+      META_DIR: /app/data/meta
+      CHUNKS_DIR: /app/data/chunks
+      DOWNLOADS_DIR: /app/data/downloads
+    user: "0:0"
     ports:
       - "${PEER2_PORT}:${PEER2_PORT}"
     volumes:
