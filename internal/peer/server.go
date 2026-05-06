@@ -44,7 +44,9 @@ func Run(cfg config.Config) error {
 
 	go heartbeatLoop(cfg, trackerClient)
 
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		BodyLimit: 1024 * 1024 * 1024, // 1GB for larger video uploads.
+	})
 
 	app.Get("/healthz", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "mode": "peer", "peer_id": cfg.PeerID})
@@ -282,22 +284,22 @@ func buildHTML(peerID string, localFiles []models.FileMetadata, networkFiles []m
 		localRows.WriteString("<tr><td>" + f.Name + "</td><td>" + formatMB(f.SizeBytes) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td><code>" + f.ID + "</code></td></tr>")
 	}
 	if localRows.Len() == 0 {
-		localRows.WriteString("<tr><td colspan=\"4\" class=\"muted\">No local files yet</td></tr>")
+		localRows.WriteString("<tr><td colspan=\"4\" class=\"muted\">Локальных файлов пока нет</td></tr>")
 	}
 
 	var networkRows strings.Builder
 	for _, f := range network {
-		networkRows.WriteString("<tr><td>" + f.Name + "</td><td>" + formatMB(f.SizeBytes) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td>" + strconv.Itoa(f.PeersCount) + "</td><td><code>" + f.ID + "</code></td><td><button type=\"button\" class=\"download-btn\" data-file-id=\"" + f.ID + "\" data-file-name=\"" + f.Name + "\">Download</button></td></tr>")
+		networkRows.WriteString("<tr><td>" + f.Name + "</td><td>" + formatMB(f.SizeBytes) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td>" + strconv.Itoa(f.PeersCount) + "</td><td><code>" + f.ID + "</code></td><td><button type=\"button\" class=\"download-btn\" data-file-id=\"" + f.ID + "\" data-file-name=\"" + f.Name + "\">Скачать</button></td></tr>")
 	}
 	if networkRows.Len() == 0 {
-		networkRows.WriteString("<tr><td colspan=\"6\" class=\"muted\">No network files yet</td></tr>")
+		networkRows.WriteString("<tr><td colspan=\"6\" class=\"muted\">В сети пока нет файлов</td></tr>")
 	}
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>P2P Peer</title>
+<title>P2P Узел</title>
 <style>
 body{font-family:Inter,Segoe UI,Arial,sans-serif;background:#0f172a;color:#e2e8f0;margin:0}
 .container{max-width:1100px;margin:0 auto;padding:24px}
@@ -324,14 +326,14 @@ code{font-size:12px;color:#93c5fd}
   <div class="card">
     <div class="top">
       <div>
-        <h1>P2P File Share</h1>
-        <div class="muted">Peer ID: <b>%s</b></div>
-        <div id="auth-user" class="muted" style="margin-top:6px;">Not logged in</div>
+        <h1>P2P Файлообмен</h1>
+        <div class="muted">ID пира: <b>%s</b></div>
+        <div id="auth-user" class="muted" style="margin-top:6px;">Вы не авторизованы</div>
       </div>
       <div class="toolbar">
-        <button id="open-auth-btn" class="secondary">Auth</button>
-        <button id="open-upload-btn">Upload File/Video</button>
-        <button id="logout-btn" class="danger">Logout</button>
+        <button id="open-auth-btn" class="secondary">Вход и регистрация</button>
+        <button id="open-upload-btn">Загрузить файл/видео</button>
+        <button id="logout-btn" class="danger">Выйти</button>
       </div>
     </div>
   </div>
@@ -339,59 +341,52 @@ code{font-size:12px;color:#93c5fd}
   <div id="status"></div>
 
   <div id="auth-panel" class="card hidden">
-    <h2>Registration & Login</h2>
+    <h2>Регистрация и вход</h2>
     <div class="grid">
       <form id="register-form">
-        <h3>Register</h3>
-        <input type="text" name="username" placeholder="Username" required><br><br>
-        <input type="password" name="password" placeholder="Password (min 6)" required><br><br>
-        <button type="submit">Create Account</button>
+        <h3>Регистрация</h3>
+        <input type="text" name="username" placeholder="Логин" required><br><br>
+        <input type="password" name="password" placeholder="Пароль (минимум 6)" required><br><br>
+        <button type="submit">Создать аккаунт</button>
       </form>
       <form id="login-form">
-        <h3>Login</h3>
-        <input type="text" name="username" placeholder="Username" required><br><br>
-        <input type="password" name="password" placeholder="Password" required><br><br>
-        <button type="submit">Login</button>
+        <h3>Вход</h3>
+        <input type="text" name="username" placeholder="Логин" required><br><br>
+        <input type="password" name="password" placeholder="Пароль" required><br><br>
+        <button type="submit">Войти</button>
       </form>
     </div>
   </div>
 
   <div id="upload-panel" class="card hidden">
-    <h2>Upload</h2>
-    <p class="muted">Supports video and any binary files. File size shown in MB.</p>
+    <h2>Загрузка</h2>
+    <p class="muted">Поддерживаются видео и любые бинарные файлы. Размер отображается в MB.</p>
     <form id="upload-form" enctype="multipart/form-data">
       <input type="file" name="file" accept="video/*,*/*" required>
-      <button type="submit">Upload</button>
+      <button type="submit">Загрузить</button>
     </form>
   </div>
 
   <div class="card">
-    <h2>Local Files</h2>
+    <h2>Локальные файлы</h2>
     <table>
-      <tr><th>Name</th><th>Size</th><th>Chunks</th><th>File ID</th></tr>
+      <tr><th>Имя</th><th>Размер</th><th>Чанки</th><th>ID файла</th></tr>
       %s
     </table>
   </div>
 
   <div class="card">
-    <h2>Network Files</h2>
+    <h2>Файлы в сети</h2>
     <table>
-      <tr><th>Name</th><th>Size</th><th>Chunks</th><th>Peers</th><th>File ID</th><th>Action</th></tr>
+      <tr><th>Имя</th><th>Размер</th><th>Чанки</th><th>Пиры</th><th>ID файла</th><th>Действие</th></tr>
       %s
     </table>
   </div>
 
   <div class="card">
-    <h2>How to get multiple peers</h2>
-    <p class="muted">1) Start at least 2 different peer instances with unique <code>PEER_ID</code>.</p>
-    <p class="muted">2) Upload on peer #1, then click Download on peer #2 for the same file.</p>
-    <p class="muted">3) After peer #2 downloads it, it announces chunks to tracker too. Refresh Network Files - peers count should increase.</p>
-  </div>
-
-  <div class="card">
-    <h2>My Activity</h2>
+    <h2>Моя активность</h2>
     <table id="activity-table">
-      <tr><th>Action</th><th>File</th><th>Size</th><th>When</th></tr>
+      <tr><th>Действие</th><th>Файл</th><th>Размер</th><th>Когда</th></tr>
     </table>
   </div>
 </div>
@@ -414,9 +409,9 @@ function showStatus(text,ok){
 function token(){return localStorage.getItem('p2p_token')||'';}
 function setAuthState(user){
   if(user){
-    userEl.textContent='Logged in as: '+user.username;
+    userEl.textContent='Вы вошли как: '+user.username;
   }else{
-    userEl.textContent='Not logged in';
+    userEl.textContent='Вы не авторизованы';
   }
 }
 async function authFetch(url,opts={}){
@@ -435,7 +430,7 @@ async function loadMe(){
 }
 async function loadActions(){
   const table=document.getElementById('activity-table');
-  table.innerHTML='<tr><th>Action</th><th>File</th><th>Size</th><th>When</th></tr>';
+  table.innerHTML='<tr><th>Действие</th><th>Файл</th><th>Размер</th><th>Когда</th></tr>';
   if(!token()){return;}
   const r=await authFetch('/api/v1/me/actions');
   if(!r.ok){return;}
@@ -451,10 +446,10 @@ document.getElementById('register-form').addEventListener('submit',async(e)=>{
   const fd=new FormData(e.target);
   const payload={username:String(fd.get('username')).trim(),password:String(fd.get('password'))};
   const r=await fetch('/api/v1/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!r.ok){showStatus('Register failed: '+await r.text(),false);return;}
+  if(!r.ok){showStatus('Ошибка регистрации: '+await r.text(),false);return;}
   const d=await r.json();
   localStorage.setItem('p2p_token',d.token);
-  showStatus('Registered and logged in',true);
+  showStatus('Регистрация выполнена, вход выполнен',true);
   authPanel.classList.add('hidden');
   await loadMe();await loadActions();
 });
@@ -463,10 +458,10 @@ document.getElementById('login-form').addEventListener('submit',async(e)=>{
   const fd=new FormData(e.target);
   const payload={username:String(fd.get('username')).trim(),password:String(fd.get('password'))};
   const r=await fetch('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!r.ok){showStatus('Login failed: '+await r.text(),false);return;}
+  if(!r.ok){showStatus('Ошибка входа: '+await r.text(),false);return;}
   const d=await r.json();
   localStorage.setItem('p2p_token',d.token);
-  showStatus('Logged in successfully',true);
+  showStatus('Вход выполнен',true);
   authPanel.classList.add('hidden');
   await loadMe();await loadActions();
 });
@@ -474,33 +469,33 @@ document.getElementById('logout-btn').addEventListener('click',async()=>{
   if(token()){await authFetch('/api/v1/auth/logout',{method:'POST'});}
   localStorage.removeItem('p2p_token');
   setAuthState(null);
-  showStatus('Logged out',true);
+  showStatus('Вы вышли из аккаунта',true);
   await loadActions();
 });
 const uploadForm=document.getElementById('upload-form');
 uploadForm.addEventListener('submit',async(e)=>{
   e.preventDefault();
-  if(!token()){showStatus('Login required',false);return;}
+  if(!token()){showStatus('Нужно войти в аккаунт',false);return;}
   const fd=new FormData(uploadForm);
-  showStatus('Uploading...',true);
+  showStatus('Загрузка файла...',true);
   try{
     const r=await authFetch('/api/v1/upload',{method:'POST',body:fd});
     if(!r.ok){throw new Error(await r.text());}
     const data=await r.json();
-    showStatus('Uploaded: '+data.file.name+' ('+formatMB(data.file.size_bytes)+')',true);
+    showStatus('Файл загружен: '+data.file.name+' ('+formatMB(data.file.size_bytes)+')',true);
     uploadPanel.classList.add('hidden');
     await loadActions();
     setTimeout(()=>location.reload(),800);
   }catch(err){
-    showStatus('Upload failed: '+err.message,false);
+    showStatus('Ошибка загрузки: '+err.message,false);
   }
 });
 document.querySelectorAll('.download-btn').forEach((btn)=>{
   btn.addEventListener('click',async()=>{
-    if(!token()){showStatus('Login required',false);return;}
+    if(!token()){showStatus('Нужно войти в аккаунт',false);return;}
     const id=btn.dataset.fileId;
     const name=btn.dataset.fileName||'download.bin';
-    showStatus('Downloading '+name+'...',true);
+    showStatus('Скачивание '+name+'...',true);
     try{
       const r=await authFetch('/api/v1/download/'+id,{method:'POST',headers:{'X-Client-Mode':'browser'}});
       if(!r.ok){throw new Error(await r.text());}
@@ -508,11 +503,11 @@ document.querySelectorAll('.download-btn').forEach((btn)=>{
       const url=URL.createObjectURL(blob);
       const a=document.createElement('a');
       a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
-      showStatus('Download completed: '+name,true);
+      showStatus('Скачивание завершено: '+name,true);
       await loadActions();
       setTimeout(()=>location.reload(),800);
     }catch(err){
-      showStatus('Download failed: '+err.message,false);
+      showStatus('Ошибка скачивания: '+err.message,false);
     }
   });
 });
