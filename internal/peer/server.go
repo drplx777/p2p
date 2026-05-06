@@ -3,6 +3,7 @@ package peer
 import (
 	"context"
 	"log"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -99,6 +100,17 @@ func Run(cfg config.Config) error {
 		if err := trackerClient.AnnounceFile(c.Context(), meta); err != nil {
 			log.Printf("announce after download warning: %v", err)
 		}
+
+		// Browser mode: return attachment to trigger real file download.
+		if c.Get("X-Client-Mode") == "browser" {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+			}
+			c.Attachment(meta.Name)
+			return c.Type("application/octet-stream").Send(raw)
+		}
+
 		return c.JSON(fiber.Map{"status": "downloaded", "saved_to": path, "file": meta})
 	})
 
@@ -174,9 +186,10 @@ func buildHTML(peerID string, localFiles []models.FileMetadata, networkFiles []m
 	b.WriteString("</head><body>")
 	b.WriteString("<h1>P2P File Share Peer</h1>")
 	b.WriteString("<p>Peer ID: <b>" + peerID + "</b></p>")
+	b.WriteString("<div id=\"status\" style=\"display:none;padding:10px;margin:8px 0;border-radius:6px;\"></div>")
 
 	b.WriteString("<h2>Upload file</h2>")
-	b.WriteString("<form action=\"/api/v1/upload\" method=\"post\" enctype=\"multipart/form-data\">")
+	b.WriteString("<form id=\"upload-form\" action=\"/api/v1/upload\" method=\"post\" enctype=\"multipart/form-data\">")
 	b.WriteString("<input type=\"file\" name=\"file\" required>")
 	b.WriteString("<button type=\"submit\">Upload</button>")
 	b.WriteString("</form>")
@@ -190,11 +203,18 @@ func buildHTML(peerID string, localFiles []models.FileMetadata, networkFiles []m
 	b.WriteString("<h2>Network files</h2><table><tr><th>Name</th><th>Size</th><th>Chunks</th><th>Peers</th><th>File ID</th><th>Action</th></tr>")
 	for _, f := range network {
 		b.WriteString("<tr><td>" + f.Name + "</td><td>" + strconv.FormatInt(f.SizeBytes, 10) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td>" + strconv.Itoa(f.PeersCount) + "</td><td><code>" + f.ID + "</code></td>")
-		b.WriteString("<td><form action=\"/api/v1/download/" + f.ID + "\" method=\"post\"><button type=\"submit\">Download</button></form></td></tr>")
+		b.WriteString("<td><button type=\"button\" class=\"download-btn\" data-file-id=\"" + f.ID + "\" data-file-name=\"" + f.Name + "\">Download</button></td></tr>")
 	}
 	b.WriteString("</table>")
 
 	b.WriteString("<p>Tip: after download, file is saved into <code>data/downloads</code> and announced to tracker.</p>")
+	b.WriteString("<script>")
+	b.WriteString("const statusEl=document.getElementById('status');")
+	b.WriteString("function showStatus(text,ok){statusEl.style.display='block';statusEl.textContent=text;statusEl.style.background=ok?'#e8f7ed':'#fdecec';statusEl.style.border=ok?'1px solid #6bbb81':'1px solid #d77';statusEl.style.color=ok?'#1a5f2a':'#8a1f1f';}")
+	b.WriteString("const uploadForm=document.getElementById('upload-form');")
+	b.WriteString("uploadForm.addEventListener('submit',async(e)=>{e.preventDefault();const fd=new FormData(uploadForm);showStatus('Uploading...',true);try{const r=await fetch('/api/v1/upload',{method:'POST',body:fd});if(!r.ok){throw new Error(await r.text());}const data=await r.json();showStatus('File uploaded: '+data.file.name+' (ID '+data.file.id.slice(0,12)+'...)',true);setTimeout(()=>location.reload(),800);}catch(err){showStatus('Upload failed: '+err.message,false);}});")
+	b.WriteString("document.querySelectorAll('.download-btn').forEach((btn)=>{btn.addEventListener('click',async()=>{const id=btn.dataset.fileId;const name=btn.dataset.fileName||'download.bin';showStatus('Downloading '+name+'...',true);try{const r=await fetch('/api/v1/download/'+id,{method:'POST',headers:{'X-Client-Mode':'browser'}});if(!r.ok){throw new Error(await r.text());}const blob=await r.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);showStatus('Download completed: '+name,true);setTimeout(()=>location.reload(),800);}catch(err){showStatus('Download failed: '+err.message,false);}});});")
+	b.WriteString("</script>")
 	b.WriteString("</body></html>")
 	return b.String()
 }
