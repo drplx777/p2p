@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"sort"
@@ -276,71 +277,251 @@ func buildHTML(peerID string, localFiles []models.FileMetadata, networkFiles []m
 	sort.Slice(local, func(i, j int) bool { return local[i].Name < local[j].Name })
 	sort.Slice(network, func(i, j int) bool { return network[i].Name < network[j].Name })
 
-	var b strings.Builder
-	b.WriteString("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>P2P Peer</title>")
-	b.WriteString("<style>body{font-family:Arial,sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;}table{width:100%;border-collapse:collapse;margin:12px 0;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background:#f3f3f3;}code{font-size:12px;}form{margin:0;}button{padding:6px 10px;}</style>")
-	b.WriteString("</head><body>")
-	b.WriteString("<h1>P2P File Share Peer</h1>")
-	b.WriteString("<p>Peer ID: <b>" + peerID + "</b></p>")
-	b.WriteString("<p id=\"auth-user\" style=\"font-weight:bold;\"></p>")
-	b.WriteString("<div id=\"status\" style=\"display:none;padding:10px;margin:8px 0;border-radius:6px;\"></div>")
-
-	b.WriteString("<h2>Registration and login</h2>")
-	b.WriteString("<div style=\"display:flex;gap:16px;flex-wrap:wrap;\">")
-	b.WriteString("<form id=\"register-form\" style=\"border:1px solid #ddd;padding:10px;border-radius:8px;\">")
-	b.WriteString("<h3>Register</h3>")
-	b.WriteString("<input type=\"text\" name=\"username\" placeholder=\"username\" required><br><br>")
-	b.WriteString("<input type=\"password\" name=\"password\" placeholder=\"password\" required><br><br>")
-	b.WriteString("<button type=\"submit\">Register</button>")
-	b.WriteString("</form>")
-	b.WriteString("<form id=\"login-form\" style=\"border:1px solid #ddd;padding:10px;border-radius:8px;\">")
-	b.WriteString("<h3>Login</h3>")
-	b.WriteString("<input type=\"text\" name=\"username\" placeholder=\"username\" required><br><br>")
-	b.WriteString("<input type=\"password\" name=\"password\" placeholder=\"password\" required><br><br>")
-	b.WriteString("<button type=\"submit\">Login</button>")
-	b.WriteString("<button type=\"button\" id=\"logout-btn\" style=\"margin-left:8px;\">Logout</button>")
-	b.WriteString("</form>")
-	b.WriteString("</div>")
-
-	b.WriteString("<h2>Upload file</h2>")
-	b.WriteString("<form id=\"upload-form\" action=\"/api/v1/upload\" method=\"post\" enctype=\"multipart/form-data\">")
-	b.WriteString("<input type=\"file\" name=\"file\" required>")
-	b.WriteString("<button type=\"submit\">Upload</button>")
-	b.WriteString("</form>")
-
-	b.WriteString("<h2>Local files</h2><table><tr><th>Name</th><th>Size</th><th>Chunks</th><th>File ID</th></tr>")
+	var localRows strings.Builder
 	for _, f := range local {
-		b.WriteString("<tr><td>" + f.Name + "</td><td>" + strconv.FormatInt(f.SizeBytes, 10) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td><code>" + f.ID + "</code></td></tr>")
+		localRows.WriteString("<tr><td>" + f.Name + "</td><td>" + formatMB(f.SizeBytes) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td><code>" + f.ID + "</code></td></tr>")
 	}
-	b.WriteString("</table>")
+	if localRows.Len() == 0 {
+		localRows.WriteString("<tr><td colspan=\"4\" class=\"muted\">No local files yet</td></tr>")
+	}
 
-	b.WriteString("<h2>Network files</h2><table><tr><th>Name</th><th>Size</th><th>Chunks</th><th>Peers</th><th>File ID</th><th>Action</th></tr>")
+	var networkRows strings.Builder
 	for _, f := range network {
-		b.WriteString("<tr><td>" + f.Name + "</td><td>" + strconv.FormatInt(f.SizeBytes, 10) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td>" + strconv.Itoa(f.PeersCount) + "</td><td><code>" + f.ID + "</code></td>")
-		b.WriteString("<td><button type=\"button\" class=\"download-btn\" data-file-id=\"" + f.ID + "\" data-file-name=\"" + f.Name + "\">Download</button></td></tr>")
+		networkRows.WriteString("<tr><td>" + f.Name + "</td><td>" + formatMB(f.SizeBytes) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td>" + strconv.Itoa(f.PeersCount) + "</td><td><code>" + f.ID + "</code></td><td><button type=\"button\" class=\"download-btn\" data-file-id=\"" + f.ID + "\" data-file-name=\"" + f.Name + "\">Download</button></td></tr>")
 	}
-	b.WriteString("</table>")
+	if networkRows.Len() == 0 {
+		networkRows.WriteString("<tr><td colspan=\"6\" class=\"muted\">No network files yet</td></tr>")
+	}
 
-	b.WriteString("<p>Tip: after download, file is saved into <code>data/downloads</code> and announced to tracker.</p>")
-	b.WriteString("<h2>My activity</h2>")
-	b.WriteString("<table id=\"activity-table\"><tr><th>Action</th><th>File</th><th>Size</th><th>When</th></tr></table>")
-	b.WriteString("<script>")
-	b.WriteString("const statusEl=document.getElementById('status');")
-	b.WriteString("const userEl=document.getElementById('auth-user');")
-	b.WriteString("function showStatus(text,ok){statusEl.style.display='block';statusEl.textContent=text;statusEl.style.background=ok?'#e8f7ed':'#fdecec';statusEl.style.border=ok?'1px solid #6bbb81':'1px solid #d77';statusEl.style.color=ok?'#1a5f2a':'#8a1f1f';}")
-	b.WriteString("function token(){return localStorage.getItem('p2p_token')||'';}")
-	b.WriteString("function setAuthState(user){if(user){userEl.textContent='Logged in as: '+user.username;}else{userEl.textContent='Not logged in';}}")
-	b.WriteString("async function authFetch(url,opts={}){const headers=Object.assign({},opts.headers||{});headers['Authorization']='Bearer '+token();const r=await fetch(url,Object.assign({},opts,{headers}));if(r.status===401){setAuthState(null);}return r;}")
-	b.WriteString("async function loadMe(){const t=token();if(!t){setAuthState(null);return;}const r=await authFetch('/api/v1/auth/me');if(!r.ok){setAuthState(null);return;}const d=await r.json();setAuthState(d.user);}")
-	b.WriteString("async function loadActions(){const table=document.getElementById('activity-table');table.innerHTML='<tr><th>Action</th><th>File</th><th>Size</th><th>When</th></tr>';if(!token()){return;}const r=await authFetch('/api/v1/me/actions');if(!r.ok){return;}const items=await r.json();items.forEach((it)=>{const tr=document.createElement('tr');tr.innerHTML='<td>'+it.action+'</td><td>'+it.file_name+'</td><td>'+it.size_bytes+'</td><td>'+it.created_at+'</td>';table.appendChild(tr);});}")
-	b.WriteString("document.getElementById('register-form').addEventListener('submit',async(e)=>{e.preventDefault();const fd=new FormData(e.target);const payload={username:String(fd.get('username')).trim(),password:String(fd.get('password'))};const r=await fetch('/api/v1/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!r.ok){showStatus('Register failed: '+await r.text(),false);return;}const d=await r.json();localStorage.setItem('p2p_token',d.token);showStatus('Registered and logged in',true);await loadMe();await loadActions();});")
-	b.WriteString("document.getElementById('login-form').addEventListener('submit',async(e)=>{e.preventDefault();const fd=new FormData(e.target);const payload={username:String(fd.get('username')).trim(),password:String(fd.get('password'))};const r=await fetch('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!r.ok){showStatus('Login failed: '+await r.text(),false);return;}const d=await r.json();localStorage.setItem('p2p_token',d.token);showStatus('Logged in successfully',true);await loadMe();await loadActions();});")
-	b.WriteString("document.getElementById('logout-btn').addEventListener('click',async()=>{if(!token()){return;}await authFetch('/api/v1/auth/logout',{method:'POST'});localStorage.removeItem('p2p_token');showStatus('Logged out',true);await loadMe();await loadActions();});")
-	b.WriteString("const uploadForm=document.getElementById('upload-form');")
-	b.WriteString("uploadForm.addEventListener('submit',async(e)=>{e.preventDefault();if(!token()){showStatus('Login required',false);return;}const fd=new FormData(uploadForm);showStatus('Uploading...',true);try{const r=await authFetch('/api/v1/upload',{method:'POST',body:fd});if(!r.ok){throw new Error(await r.text());}const data=await r.json();showStatus('File uploaded: '+data.file.name+' (ID '+data.file.id.slice(0,12)+'...)',true);await loadActions();setTimeout(()=>location.reload(),800);}catch(err){showStatus('Upload failed: '+err.message,false);}});")
-	b.WriteString("document.querySelectorAll('.download-btn').forEach((btn)=>{btn.addEventListener('click',async()=>{if(!token()){showStatus('Login required',false);return;}const id=btn.dataset.fileId;const name=btn.dataset.fileName||'download.bin';showStatus('Downloading '+name+'...',true);try{const r=await authFetch('/api/v1/download/'+id,{method:'POST',headers:{'X-Client-Mode':'browser'}});if(!r.ok){throw new Error(await r.text());}const blob=await r.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);showStatus('Download completed: '+name,true);await loadActions();setTimeout(()=>location.reload(),800);}catch(err){showStatus('Download failed: '+err.message,false);}});});")
-	b.WriteString("loadMe();loadActions();")
-	b.WriteString("</script>")
-	b.WriteString("</body></html>")
-	return b.String()
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>P2P Peer</title>
+<style>
+body{font-family:Inter,Segoe UI,Arial,sans-serif;background:#0f172a;color:#e2e8f0;margin:0}
+.container{max-width:1100px;margin:0 auto;padding:24px}
+.card{background:#111b32;border:1px solid #253456;border-radius:14px;padding:16px 18px;margin-bottom:16px;box-shadow:0 6px 20px rgba(0,0,0,.22)}
+h1,h2,h3{margin:0 0 12px 0}
+.muted{color:#94a3b8}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap}
+button{background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:9px 13px;cursor:pointer}
+button.secondary{background:#334155}
+button.danger{background:#ef4444}
+input{background:#0b1224;border:1px solid #334155;color:#e2e8f0;padding:9px 10px;border-radius:10px;min-width:220px}
+table{width:100%%;border-collapse:collapse}
+th,td{padding:10px;border-bottom:1px solid #233350;text-align:left}
+th{color:#cbd5e1;font-weight:600}
+code{font-size:12px;color:#93c5fd}
+.hidden{display:none}
+#status{display:none;padding:12px;border-radius:10px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <div class="top">
+      <div>
+        <h1>P2P File Share</h1>
+        <div class="muted">Peer ID: <b>%s</b></div>
+        <div id="auth-user" class="muted" style="margin-top:6px;">Not logged in</div>
+      </div>
+      <div class="toolbar">
+        <button id="open-auth-btn" class="secondary">Auth</button>
+        <button id="open-upload-btn">Upload File/Video</button>
+        <button id="logout-btn" class="danger">Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="status"></div>
+
+  <div id="auth-panel" class="card hidden">
+    <h2>Registration & Login</h2>
+    <div class="grid">
+      <form id="register-form">
+        <h3>Register</h3>
+        <input type="text" name="username" placeholder="Username" required><br><br>
+        <input type="password" name="password" placeholder="Password (min 6)" required><br><br>
+        <button type="submit">Create Account</button>
+      </form>
+      <form id="login-form">
+        <h3>Login</h3>
+        <input type="text" name="username" placeholder="Username" required><br><br>
+        <input type="password" name="password" placeholder="Password" required><br><br>
+        <button type="submit">Login</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="upload-panel" class="card hidden">
+    <h2>Upload</h2>
+    <p class="muted">Supports video and any binary files. File size shown in MB.</p>
+    <form id="upload-form" enctype="multipart/form-data">
+      <input type="file" name="file" accept="video/*,*/*" required>
+      <button type="submit">Upload</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Local Files</h2>
+    <table>
+      <tr><th>Name</th><th>Size</th><th>Chunks</th><th>File ID</th></tr>
+      %s
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Network Files</h2>
+    <table>
+      <tr><th>Name</th><th>Size</th><th>Chunks</th><th>Peers</th><th>File ID</th><th>Action</th></tr>
+      %s
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>How to get multiple peers</h2>
+    <p class="muted">1) Start at least 2 different peer instances with unique <code>PEER_ID</code>.</p>
+    <p class="muted">2) Upload on peer #1, then click Download on peer #2 for the same file.</p>
+    <p class="muted">3) After peer #2 downloads it, it announces chunks to tracker too. Refresh Network Files - peers count should increase.</p>
+  </div>
+
+  <div class="card">
+    <h2>My Activity</h2>
+    <table id="activity-table">
+      <tr><th>Action</th><th>File</th><th>Size</th><th>When</th></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+const statusEl=document.getElementById('status');
+const userEl=document.getElementById('auth-user');
+const authPanel=document.getElementById('auth-panel');
+const uploadPanel=document.getElementById('upload-panel');
+document.getElementById('open-auth-btn').onclick=()=>authPanel.classList.toggle('hidden');
+document.getElementById('open-upload-btn').onclick=()=>uploadPanel.classList.toggle('hidden');
+function formatMB(bytes){return (Number(bytes)/(1024*1024)).toFixed(2)+' MB';}
+function showStatus(text,ok){
+  statusEl.style.display='block';
+  statusEl.textContent=text;
+  statusEl.style.background=ok?'#062f1f':'#3f1b1b';
+  statusEl.style.border=ok?'1px solid #16a34a':'1px solid #ef4444';
+  statusEl.style.color=ok?'#bbf7d0':'#fecaca';
+}
+function token(){return localStorage.getItem('p2p_token')||'';}
+function setAuthState(user){
+  if(user){
+    userEl.textContent='Logged in as: '+user.username;
+  }else{
+    userEl.textContent='Not logged in';
+  }
+}
+async function authFetch(url,opts={}){
+  const headers=Object.assign({},opts.headers||{});
+  headers['Authorization']='Bearer '+token();
+  const r=await fetch(url,Object.assign({},opts,{headers}));
+  if(r.status===401){setAuthState(null);}
+  return r;
+}
+async function loadMe(){
+  if(!token()){setAuthState(null);return;}
+  const r=await authFetch('/api/v1/auth/me');
+  if(!r.ok){setAuthState(null);return;}
+  const d=await r.json();
+  setAuthState(d.user);
+}
+async function loadActions(){
+  const table=document.getElementById('activity-table');
+  table.innerHTML='<tr><th>Action</th><th>File</th><th>Size</th><th>When</th></tr>';
+  if(!token()){return;}
+  const r=await authFetch('/api/v1/me/actions');
+  if(!r.ok){return;}
+  const items=await r.json();
+  items.forEach((it)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+it.action+'</td><td>'+it.file_name+'</td><td>'+formatMB(it.size_bytes)+'</td><td>'+it.created_at+'</td>';
+    table.appendChild(tr);
+  });
+}
+document.getElementById('register-form').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  const fd=new FormData(e.target);
+  const payload={username:String(fd.get('username')).trim(),password:String(fd.get('password'))};
+  const r=await fetch('/api/v1/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!r.ok){showStatus('Register failed: '+await r.text(),false);return;}
+  const d=await r.json();
+  localStorage.setItem('p2p_token',d.token);
+  showStatus('Registered and logged in',true);
+  authPanel.classList.add('hidden');
+  await loadMe();await loadActions();
+});
+document.getElementById('login-form').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  const fd=new FormData(e.target);
+  const payload={username:String(fd.get('username')).trim(),password:String(fd.get('password'))};
+  const r=await fetch('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!r.ok){showStatus('Login failed: '+await r.text(),false);return;}
+  const d=await r.json();
+  localStorage.setItem('p2p_token',d.token);
+  showStatus('Logged in successfully',true);
+  authPanel.classList.add('hidden');
+  await loadMe();await loadActions();
+});
+document.getElementById('logout-btn').addEventListener('click',async()=>{
+  if(token()){await authFetch('/api/v1/auth/logout',{method:'POST'});}
+  localStorage.removeItem('p2p_token');
+  setAuthState(null);
+  showStatus('Logged out',true);
+  await loadActions();
+});
+const uploadForm=document.getElementById('upload-form');
+uploadForm.addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  if(!token()){showStatus('Login required',false);return;}
+  const fd=new FormData(uploadForm);
+  showStatus('Uploading...',true);
+  try{
+    const r=await authFetch('/api/v1/upload',{method:'POST',body:fd});
+    if(!r.ok){throw new Error(await r.text());}
+    const data=await r.json();
+    showStatus('Uploaded: '+data.file.name+' ('+formatMB(data.file.size_bytes)+')',true);
+    uploadPanel.classList.add('hidden');
+    await loadActions();
+    setTimeout(()=>location.reload(),800);
+  }catch(err){
+    showStatus('Upload failed: '+err.message,false);
+  }
+});
+document.querySelectorAll('.download-btn').forEach((btn)=>{
+  btn.addEventListener('click',async()=>{
+    if(!token()){showStatus('Login required',false);return;}
+    const id=btn.dataset.fileId;
+    const name=btn.dataset.fileName||'download.bin';
+    showStatus('Downloading '+name+'...',true);
+    try{
+      const r=await authFetch('/api/v1/download/'+id,{method:'POST',headers:{'X-Client-Mode':'browser'}});
+      if(!r.ok){throw new Error(await r.text());}
+      const blob=await r.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+      showStatus('Download completed: '+name,true);
+      await loadActions();
+      setTimeout(()=>location.reload(),800);
+    }catch(err){
+      showStatus('Download failed: '+err.message,false);
+    }
+  });
+});
+loadMe();loadActions();
+</script>
+</body>
+</html>`, peerID, localRows.String(), networkRows.String())
+}
+
+func formatMB(sizeBytes int64) string {
+	return fmt.Sprintf("%.2f MB", float64(sizeBytes)/(1024*1024))
 }
