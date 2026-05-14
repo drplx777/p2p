@@ -158,6 +158,7 @@ func (s *AuthStore) AddAction(ctx context.Context, userID int64, action, fileID,
 }
 
 type FileAction struct {
+	Username  string `json:"username"`
 	Action    string `json:"action"`
 	FileID    string `json:"file_id"`
 	FileName  string `json:"file_name"`
@@ -168,10 +169,11 @@ type FileAction struct {
 func (s *AuthStore) ListActions(ctx context.Context, userID int64) ([]FileAction, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT action, file_id, file_name, size_bytes, created_at::text
+		`SELECT u.username, file_actions.action, file_actions.file_id, file_actions.file_name, file_actions.size_bytes, file_actions.created_at::text
 		 FROM file_actions
-		 WHERE user_id = $1
-		 ORDER BY created_at DESC
+		 JOIN users u ON u.id = file_actions.user_id
+		 WHERE file_actions.user_id = $1
+		 ORDER BY file_actions.created_at DESC
 		 LIMIT 50`,
 		userID,
 	)
@@ -183,7 +185,32 @@ func (s *AuthStore) ListActions(ctx context.Context, userID int64) ([]FileAction
 	out := make([]FileAction, 0)
 	for rows.Next() {
 		var item FileAction
-		if err := rows.Scan(&item.Action, &item.FileID, &item.FileName, &item.SizeBytes, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.Username, &item.Action, &item.FileID, &item.FileName, &item.SizeBytes, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *AuthStore) ListAllActions(ctx context.Context) ([]FileAction, error) {
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT u.username, fa.action, fa.file_id, fa.file_name, fa.size_bytes, fa.created_at::text
+		 FROM file_actions fa
+		 JOIN users u ON u.id = fa.user_id
+		 ORDER BY fa.created_at DESC
+		 LIMIT 100`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]FileAction, 0)
+	for rows.Next() {
+		var item FileAction
+		if err := rows.Scan(&item.Username, &item.Action, &item.FileID, &item.FileName, &item.SizeBytes, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, item)

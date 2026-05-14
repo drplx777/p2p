@@ -126,9 +126,8 @@ func Run(cfg config.Config) error {
 		return c.JSON(files)
 	})
 
-	api.Get("/me/actions", func(c fiber.Ctx) error {
-		user := c.Locals("user").(User)
-		actions, err := authStore.ListActions(c.Context(), user.ID)
+	api.Get("/actions", func(c fiber.Ctx) error {
+		actions, err := authStore.ListAllActions(c.Context())
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 		}
@@ -281,18 +280,18 @@ func buildHTML(peerID string, localFiles []models.FileMetadata, networkFiles []m
 
 	var localRows strings.Builder
 	for _, f := range local {
-		localRows.WriteString("<tr><td>" + f.Name + "</td><td>" + formatMB(f.SizeBytes) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td><code>" + f.ID + "</code></td></tr>")
+		localRows.WriteString("<tr><td>" + f.Name + "</td><td>" + formatMB(f.SizeBytes) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td></tr>")
 	}
 	if localRows.Len() == 0 {
-		localRows.WriteString("<tr><td colspan=\"4\" class=\"muted\">Локальных файлов пока нет</td></tr>")
+		localRows.WriteString("<tr><td colspan=\"3\" class=\"muted\">Локальных файлов пока нет</td></tr>")
 	}
 
 	var networkRows strings.Builder
 	for _, f := range network {
-		networkRows.WriteString("<tr><td>" + f.Name + "</td><td>" + formatMB(f.SizeBytes) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td>" + strconv.Itoa(f.PeersCount) + "</td><td><code>" + f.ID + "</code></td><td><button type=\"button\" class=\"download-btn\" data-file-id=\"" + f.ID + "\" data-file-name=\"" + f.Name + "\">Скачать</button></td></tr>")
+		networkRows.WriteString("<tr><td>" + f.Name + "</td><td>" + formatMB(f.SizeBytes) + "</td><td>" + strconv.Itoa(f.ChunkCount) + "</td><td>" + strconv.Itoa(f.PeersCount) + "</td><td><button type=\"button\" class=\"download-btn\" data-file-id=\"" + f.ID + "\" data-file-name=\"" + f.Name + "\">Скачать</button></td></tr>")
 	}
 	if networkRows.Len() == 0 {
-		networkRows.WriteString("<tr><td colspan=\"6\" class=\"muted\">В сети пока нет файлов</td></tr>")
+		networkRows.WriteString("<tr><td colspan=\"5\" class=\"muted\">В сети пока нет файлов</td></tr>")
 	}
 
 	return fmt.Sprintf(`<!DOCTYPE html>
@@ -370,7 +369,7 @@ code{font-size:12px;color:#93c5fd}
   <div class="card">
     <h2>Локальные файлы</h2>
     <table>
-      <tr><th>Имя</th><th>Размер</th><th>Чанки</th><th>ID файла</th></tr>
+      <tr><th>Имя</th><th>Размер</th><th>Чанки</th></tr>
       %s
     </table>
   </div>
@@ -378,15 +377,15 @@ code{font-size:12px;color:#93c5fd}
   <div class="card">
     <h2>Файлы в сети</h2>
     <table>
-      <tr><th>Имя</th><th>Размер</th><th>Чанки</th><th>Пиры</th><th>ID файла</th><th>Действие</th></tr>
+      <tr><th>Имя</th><th>Размер</th><th>Чанки</th><th>Пиры</th><th>Действие</th></tr>
       %s
     </table>
   </div>
 
   <div class="card">
-    <h2>Моя активность</h2>
+    <h2>Активность пользователей</h2>
     <table id="activity-table">
-      <tr><th>Действие</th><th>Файл</th><th>Размер</th><th>Когда</th></tr>
+      <tr><th>Пользователь</th><th>Действие</th><th>Файл</th><th>Размер</th><th>Когда</th></tr>
     </table>
   </div>
 </div>
@@ -430,14 +429,14 @@ async function loadMe(){
 }
 async function loadActions(){
   const table=document.getElementById('activity-table');
-  table.innerHTML='<tr><th>Действие</th><th>Файл</th><th>Размер</th><th>Когда</th></tr>';
+  table.innerHTML='<tr><th>Пользователь</th><th>Действие</th><th>Файл</th><th>Размер</th><th>Когда</th></tr>';
   if(!token()){return;}
-  const r=await authFetch('/api/v1/me/actions');
+  const r=await authFetch('/api/v1/actions');
   if(!r.ok){return;}
   const items=await r.json();
   items.forEach((it)=>{
     const tr=document.createElement('tr');
-    tr.innerHTML='<td>'+it.action+'</td><td>'+it.file_name+'</td><td>'+formatMB(it.size_bytes)+'</td><td>'+it.created_at+'</td>';
+    tr.innerHTML='<td>'+it.username+'</td><td>'+it.action+'</td><td>'+it.file_name+'</td><td>'+formatMB(it.size_bytes)+'</td><td>'+it.created_at+'</td>';
     table.appendChild(tr);
   });
 }
